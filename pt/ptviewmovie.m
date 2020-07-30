@@ -2,13 +2,13 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
   ptviewmovie(images,frameorder,framecolor,frameduration,fixationorder,fixationcolor,fixationsize, ...
               grayval,detectinput,wantcheck,offset,moviemask,movieflip,scfactor,allowforceglitch, ...
               triggerfun,framefiles,frameskip,triggerkey,specialcon,trialtask,maskimages,specialoverlay, ...
-              frameevents,framefuncs,setupscript,cleanupscript)
+              frameevents,framefuncs,setupscript,cleanupscript,stereocontrol,stereoflip)
 
 % function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %   ptviewmovie(images,frameorder,framecolor,frameduration,fixationorder,fixationcolor,fixationsize, ...
 %               grayval,detectinput,wantcheck,offset,moviemask,movieflip,scfactor,allowforceglitch, ...
 %               triggerfun,framefiles,frameskip,triggerkey,specialcon,trialtask,maskimages,specialoverlay, ...
-%               frameevents,framefuncs,setupscript,cleanupscript)
+%               frameevents,framefuncs,setupscript,cleanupscript,stereocontrol,stereoflip)
 % 
 % <images> is a .mat file with 'images' as a uint8
 %   A x B x 1/3 x N matrix with different images along the fourth dimension.  
@@ -107,7 +107,8 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %     and B is the number of pixels for the width of the border of the dot 
 %     (the border is black).  for example, [6 1] means to use a dot that has
 %     radius 3 and that has a border from 2 pixels to 3 pixels away from the center.
-%     note that the default of 5 is equivalent to [5 0].
+%     note that the default of 5 is equivalent to [5 0].  another special case
+%     is {[A B] COLOR} where COLOR is a 1x3 uint8 color to use for the border.
 %   B where B is an N x N image of values in [0,1].  This image defines the
 %     "fixation dot".  A value of 1 means to be fully opaque, and a value of 0
 %     means to be fully transparent.  We detect this case by checking if
@@ -150,10 +151,11 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %     note that this has an effect only if <detectinput> is on.
 %     forcing glitches is useful for testing purposes.
 %   default: 0.
-% <triggerfun> (optional) is the function to call right before we start the movie.
-%   default is [] which means do not call any function.
+% <triggerfun> (optional) is the function to call right before we start the movie
+%   and right after the movie ends.  default is [] which means do not call any function.
 %   if supplied, we create a 'trigger' event in <timekeys>, recording
-%   the time of completion.
+%   the time right after <triggerfun> completes (in both cases).  note that
+%   we issue the ending <triggerfun> only if the movie runs to completion.
 % <framefiles> (optional) is an sprintf string like '~/frame%05d.png'.  if supplied,
 %   we write images containing the actual final frames shown on the display to 
 %   the filenames specified by <framefiles>.  the files are 1-indexed, from 1 
@@ -249,14 +251,19 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %   experiment starts.  Default: [].
 % <cleanupscript> (optional) is a string or a function handle that is evaluated after the
 %   experiment ends.  Default: [].
+% <stereocontrol> (optional) is [] or 1 x size(<frameorder>,2) with values that are
+%   either 1/2/3. 1 means show in left eye, 2 means show in right eye, 3 means show in
+%   both eyes.  Default is [] which is standard "mono" mode.
+% <stereoflip> (optional) is whether to flip the left eye and right eye at the level
+%   of the stereo drawing (so that the subject gets the correct stimulus delivery). Default: 0.
 % return <timeframes> as a 1 x size(<frameorder>,2) vector with the time of each frame showing.
 %   (time is relative to the time of the first frame.)
 % return <timekeys> as a record of the input detected.  the format is {(time button;)*}.
 %   where button is a string (single button depressed) or a cell vector of strings (multiple
 %   buttons depressed).  for regular button presses, the recorded time is what KbCheck returns.
-%   the very first entry in <timekeys> is special ('absolutetimefor0') and indicates the absolute
-%   time corresponding to the time of the first frame; all other time entries are relative to the
-%   time of the first frame.
+%   the first entry in <timekeys> is special ('absolutetimefor0') as it indicates the 
+%   absolute time corresponding to the time of the first frame, as reported by MATLAB's
+%   now.m function. The remaining time entries are relative to the time of the first frame.
 % return <digitrecord> as {A B C} where A is a 1 x size(<frameorder>,2) vector with the digit (0-9)
 %   shown on each frame (only the onsets of digits are recorded; the rest of the entries are NaN),
 %   and B and C are auxiliary items that are useful for replicating the exact behavior (through
@@ -278,6 +285,7 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %     In the movie, each frame either results in filling with gray (i.e.
 %       when <frameorder> is 0) or results in showing an image,
 %       and then the fixation is drawn.
+%     After the movie is done, we issue <triggerfun>.
 %     Finally, we fill the background with gray and draw the fixation.
 % - Before starting the movie presentation, we call Priority(MaxPriority) and hide the cursor.
 %   At the end of the presentation, we restore the original priority and show the cursor.
@@ -299,6 +307,13 @@ function [timeframes,timekeys,digitrecord,trialoffsets] = ...
 %   So it is important to test your particular setup!
 %
 % history:
+% 2019/01/05 - change absolutetime0 to be matlab's now function!
+% 2018/10/25 - tweak to glitch-compensation mechanism: use 0 in the Flip command.
+% 2018/10/16 - implement reporttext and the case of dot color changes (fixationorder case 2)
+% 2018/09/14 - extend fixationsize to the {[A B] COLOR} case
+% 2018/07/27 - tweak to glitch-compensation mechanism. this is tricky business.
+% 2018/05/25 - add <stereocontrol> as input and <stereoflip> as input
+% 2018/01/10 - CHANGE TO BEHAVIOR: triggerfun is now issued at the end of the movie also.
 % 2015/11/09 - add cleanupscript as input
 % 2015/09/30 - add frameevents,framefuncs,setupscript as inputs.
 % 2015/03/23 - oops. fix bug in the circshifting introduced by the previous checkin.
@@ -423,14 +438,23 @@ end
 if ~exist('cleanupscript','var') || isempty(cleanupscript)
   cleanupscript = [];
 end
+if ~exist('stereocontrol','var') || isempty(stereocontrol)
+  stereocontrol = [];
+end
+if ~exist('stereoflip','var') || isempty(stereoflip)
+  stereoflip = 0;
+end
 if ischar(images)
   images = {images};
 end
 if ischar(maskimages)
   maskimages = {maskimages};
 end
-if size(fixationsize,1) == 1 && length(fixationsize) == 1
+if ~iscell(fixationsize) && (size(fixationsize,1) == 1 && length(fixationsize) == 1)
   fixationsize = [fixationsize 0];
+end
+if ~iscell(fixationsize) && (size(fixationsize,1) == 1)
+  fixationsize = {fixationsize uint8([0 0 0])};
 end
 wantframefiles = ~isempty(framefiles);
 if ~isempty(framefiles)
@@ -540,6 +564,25 @@ end
 win = firstel(Screen('Windows'));
 rect = Screen('Rect',win);
 
+% deal with stereo blue rect stuff
+if ~isempty(stereocontrol)
+  blueRectLeftOn   = [0,                 rect(4)-1, rect(3)/4,   rect(4)];
+  blueRectLeftOff  = [rect(3)/4,   rect(4)-1, rect(3),     rect(4)];
+  blueRectRightOn  = [0,                 rect(4)-1, rect(3)*3/4, rect(4)];
+  blueRectRightOff = [rect(3)*3/4, rect(4)-1, rect(3),     rect(4)];
+  leftbluefun1 = @() Screen('FillRect', win, [0, 0, 255], blueRectLeftOn);
+  leftbluefun2 = @() Screen('FillRect', win, [0, 0, 0], blueRectLeftOff);
+  rightbluefun1 = @() Screen('FillRect', win, [0, 0, 255], blueRectRightOn);
+  rightbluefun2 = @() Screen('FillRect', win, [0, 0, 0], blueRectRightOff);
+  if stereoflip
+    lenum = 1;
+    renum = 0;
+  else
+    lenum = 0;
+    renum = 1;
+  end
+end
+    
 % calc
 if iscell(images)
   d1images = size(images{1},1);
@@ -569,7 +612,7 @@ if isempty(fixationorder)
 end
 
 % prepare fixationrect (movierect is now computed right before it is needed)
-if size(fixationsize,1) == 1  % dot case
+if iscell(fixationsize)  % dot case
   % easy case
   if ~focase4
     if focase3
@@ -577,12 +620,12 @@ if size(fixationsize,1) == 1  % dot case
     else
       fixationoff0 = 0;
     end
-    fixationrect = CenterRect([0 0 2*fixationsize(1) 2*fixationsize(1)],rect) + [offset(1) offset(2) offset(1) offset(2)] + fixationoff0;  % allow doubling of fixationsize for room for anti-aliasing
+    fixationrect = CenterRect([0 0 2*fixationsize{1}(1) 2*fixationsize{1}(1)],rect) + [offset(1) offset(2) offset(1) offset(2)] + fixationoff0;  % allow doubling of fixationsize for room for anti-aliasing
   % special case of multiple digits
   else
     fixationrect = {};
     for p=1:length(fixationorder{3})
-      fixationrect{p} = CenterRect([0 0 2*fixationsize(1) 2*fixationsize(1)],rect) + [offset(1) offset(2) offset(1) offset(2)] + repmat(fixationorder{3}{p},[1 2]);
+      fixationrect{p} = CenterRect([0 0 2*fixationsize{1}(1) 2*fixationsize{1}(1)],rect) + [offset(1) offset(2) offset(1) offset(2)] + repmat(fixationorder{3}{p},[1 2]);
     end
   end
 else  % image case
@@ -601,18 +644,19 @@ if ~iscell(fixationorder)
   fixationcase = any(fixationorder < 0);  % 0 means regular case, 1 means negative-integer case
 
   % dot case
-  if size(fixationsize,1) == 1
+  if iscell(fixationsize)
 
       % 2*fixationsize x 2*fixationsize x 3 x N; several different uint8 solid colors
-    fixationimage = zeros([2*fixationsize(1) 2*fixationsize(1) 3 size(fixationcolor,1)]);
-    temp = find(makecircleimage(2*fixationsize(1),fixationsize(1)/2-fixationsize(2)));  % this tells us where to insert color
+    fixationimage = zeros([2*fixationsize{1}(1) 2*fixationsize{1}(1) 3 size(fixationcolor,1)]);
+    temp = find(makecircleimage(2*fixationsize{1}(1),fixationsize{1}(1)/2-fixationsize{1}(2)));  % this tells us where to insert color
     for p=1:size(fixationcolor,1)
-      temp0 = zeros([2*fixationsize(1)*2*fixationsize(1) 3]);  % everything is initially black
+      temp0 = zeros([2*fixationsize{1}(1)*2*fixationsize{1}(1) 3]);  % everything is initially black
+      temp0 = repmat(double(fixationsize{2}),[size(temp0,1) 1]);     % but we fill it with the specified color
       temp0(temp,:) = repmat(fixationcolor(p,:),[length(temp) 1]);  % insert color in the innermost circle
-      fixationimage(:,:,:,p) = reshape(temp0,[2*fixationsize(1) 2*fixationsize(1) 3]);
+      fixationimage(:,:,:,p) = reshape(temp0,[2*fixationsize{1}(1) 2*fixationsize{1}(1) 3]);
     %OLD:    fixationimage(:,:,:,p) = repmat(reshape(fixationcolor(p,:),[1 1 3]),[2*fixationsize 2*fixationsize]);
     end
-    fixationalpha = 255*makecircleimage(2*fixationsize(1),fixationsize(1)/2);  % 2*fixationsize x 2*fixationsize; double [0,255] alpha values (255 in circle, 0 outside)
+    fixationalpha = 255*makecircleimage(2*fixationsize{1}(1),fixationsize{1}(1)/2);  % 2*fixationsize x 2*fixationsize; double [0,255] alpha values (255 in circle, 0 outside)
   
   % image case
   else
@@ -629,7 +673,7 @@ if ~iscell(fixationorder)
 else
 
   % prepare digits as 2*fixationsize x 2*fixationsize x 3 x N; uint8 format
-  digits = drawtexts(2*fixationsize(1),0,0,'Helvetica',fixationorder{1}, ...
+  digits = drawtexts(2*fixationsize{1}(1),0,0,'Helvetica',fixationorder{1}, ...
                      [1 1 1],[0 0 0],mat2cell(['0':'9' 'A':'Z'],1,ones(1,10+26)));
   digits = round(normalizerange(digits,0,1));  % binarize so that values are either 0 or 1
   digsize = sizefull(digits,3);
@@ -658,8 +702,8 @@ else
     fixationalpha(:,:,end+1) = 0;  % the last frame is completely transparent
   else
     % (255 in circle, 0 outside). gradual ramp.
-    fixationalpha = repmat(uint8(255*makecircleimage(2*fixationsize(1), ...
-                    fixationsize(1)/2-fixationsize(2),[],[],fixationsize(1)/2)),[1 1 (10+26)*2+1]);
+    fixationalpha = repmat(uint8(255*makecircleimage(2*fixationsize{1}(1), ...
+                    fixationsize{1}(1)/2-fixationsize{1}(2),[],[],fixationsize{1}(1)/2)),[1 1 (10+26)*2+1]);
   end
   
 end
@@ -690,6 +734,10 @@ trialoffsets = [];
 digitframe = [];
 digitpolarity = [];
 when = 0;
+GetSecs;
+now;
+ceil(1);
+fprintf('');
 oldPriority = Priority(MaxPriority(win));
 HideCursor;
 mfi = Screen('GetFlipInterval',win);  % re-use what was found upon initialization!
@@ -900,10 +948,24 @@ end
 %%%%%%%%%%%%%%%%% START THE EXPERIMENT
 
 % draw the background, overlay, and fixation
-Screen('FillRect',win,grayval,rect);
+if isempty(stereocontrol)
+  Screen('FillRect',win,grayval,rect);
+else
+  for sb=0:1
+    Screen('SelectStereoDrawBuffer', win, sb);
+    Screen('FillRect',win,grayval,rect);
+  end
+end
 if ~isempty(specialoverlay)
   texture = Screen('MakeTexture',win,specialoverlay);
-  Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+  if isempty(stereocontrol)
+    Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+  else
+    for sb=0:1
+      Screen('SelectStereoDrawBuffer', win, sb);
+      Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+    end
+  end
   Screen('Close',texture);
 end
 if focase3
@@ -924,12 +986,27 @@ if ~iscell(texture)
   texture = {texture};
 end
 for p=1:length(texture)
-  Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+  if isempty(stereocontrol)
+    Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+  else
+    for sb=0:1
+      Screen('SelectStereoDrawBuffer', win, sb);
+      Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+    end
+  end
   Screen('Close',texture{p});
 end
 if ~isempty(specialcon)
   Screen('LoadNormalizedGammaTable',win,specialcluts(:,:,allcons==100),1);  % use loadOnNextFlip!
   lastsc = 100;
+end
+
+% blue lines and flip
+if ~isempty(stereocontrol)
+  Screen('SelectStereoDrawBuffer', win, 0);
+  leftbluefun1(); leftbluefun2();
+  Screen('SelectStereoDrawBuffer', win, 1);
+  rightbluefun1(); rightbluefun2();
 end
 Screen('Flip',win);
 
@@ -943,7 +1020,7 @@ if ~isempty(setupscript)
 end
 
 % wait for a key press to start
-fprintf('press a key to begin the movie. (make sure to turn off network, energy saver, spotlight, software updates! mirror mode on!)\n');
+fprintf('press trigger key to begin the movie. (consider turning off network, energy saver, software updates.)\n');
 safemode = 0;
 while 1
   [secs,keyCode,deltaSecs] = KbWait(-3,2);
@@ -979,8 +1056,13 @@ end
   %        end
   %    end
 
-% wait until next vertical retrace (to reduce run-to-run variability)
-Screen('Flip',win);
+% removed on Dec 30 2018 (we need to go as fast as we can after the scanner trigger).
+% note that before removing this, the detected trigger time is not quite the same
+% as the recorded trigger time below!
+if 0 
+  % wait until next vertical retrace (to reduce run-to-run variability)
+  Screen('Flip',win);
+end
 
 % issue the trigger and record it
 if ~isempty(triggerfun)
@@ -993,12 +1075,17 @@ framecnt = 0;
 for frame=1:frameskip:size(frameorder,2)+1
   framecnt = framecnt + 1;
   frame0 = floor(frame);
+  reporttext = '';
 
   % we have to wait until the last frame is done.  so this is how we hack that in.
   if frame0==size(frameorder,2)+1
     while 1
-      if GetSecs >= when
+      if GetSecs >= whendesired
         getoutearly = 1;
+        if ~isempty(triggerfun)
+          feval(triggerfun);
+          timekeys = [timekeys; {GetSecs 'trigger'}];
+        end
         break;
       end
     end
@@ -1012,7 +1099,14 @@ for frame=1:frameskip:size(frameorder,2)+1
   % if special 0 case, just fill with gray
   MI = [];
   if frameorder(1,frame0) == 0
-    Screen('FillRect',win,grayval);   % REMOVED! this means do whole screen.    % ,movierect);
+    if isempty(stereocontrol)
+      Screen('FillRect',win,grayval);  % REMOVED! this means do whole screen.    % ,movierect);
+    else
+      for sb=0:1
+        Screen('SelectStereoDrawBuffer', win, sb);
+        Screen('FillRect',win,grayval);
+      end
+    end
 
   % otherwise, make a texture, draw it at a particular position
   else
@@ -1060,9 +1154,49 @@ for frame=1:frameskip:size(frameorder,2)+1
                 repmat(extracircshift([2 1]),[1 2]) + ...
                 [offset(1) offset(2) offset(1) offset(2)];
     if size(framecolor,2) == 3  % the usual case
-      Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+      if isempty(stereocontrol)
+        Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+      else
+        switch stereocontrol(frame0)
+        case 1
+          Screen('SelectStereoDrawBuffer', win, lenum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+          Screen('SelectStereoDrawBuffer', win, renum); 
+          Screen('FillRect',win,grayval);
+        case 2
+          Screen('SelectStereoDrawBuffer', win, renum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+          Screen('SelectStereoDrawBuffer', win, lenum); 
+          Screen('FillRect',win,grayval);
+        case 3
+          Screen('SelectStereoDrawBuffer', win, lenum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+          Screen('SelectStereoDrawBuffer', win, renum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,1,framecolor(frame0,:));
+        end
+      end
     else
-      Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+      if isempty(stereocontrol)
+        Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+      else
+        switch stereocontrol(frame0)
+        case 1
+          Screen('SelectStereoDrawBuffer', win, lenum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+          Screen('SelectStereoDrawBuffer', win, renum); 
+          Screen('FillRect',win,grayval);
+        case 2
+          Screen('SelectStereoDrawBuffer', win, renum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+          Screen('SelectStereoDrawBuffer', win, lenum); 
+          Screen('FillRect',win,grayval);
+        case 3
+          Screen('SelectStereoDrawBuffer', win, lenum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+          Screen('SelectStereoDrawBuffer', win, renum);   
+          Screen('DrawTexture',win,texture,[],movierect,0,filtermode,framecolor(frame0));
+        end
+      end
     end
     Screen('Close',texture);
   end
@@ -1070,7 +1204,14 @@ for frame=1:frameskip:size(frameorder,2)+1
   % draw the overlay
   if ~isempty(specialoverlay)
     texture = Screen('MakeTexture',win,specialoverlay);
-    Screen('DrawTexture',win,texture,[],overlayrect,0,0);
+    if isempty(stereocontrol)
+      Screen('DrawTexture',win,texture,[],overlayrect,0,0);
+    else
+      for sb=0:1
+        Screen('SelectStereoDrawBuffer', win, sb);
+        Screen('DrawTexture',win,texture,[],overlayrect,0,0);
+      end
+    end
     Screen('Close',texture);
   end
   
@@ -1102,6 +1243,12 @@ for frame=1:frameskip:size(frameorder,2)+1
     if fixationcase==0
       texture = Screen('MakeTexture',win,cat(3,fixationimage,uint8(fixationorder(1+frame0)*fixationalpha)));
     else
+      % report to command window whenever the fixation dot color changes!
+      if frame0~=1
+        if fixationorder(1+frame0) ~= fixationorder(1+frame0-1)
+          reporttext = sprintf('EVENT %s\n',mat2str(clock));
+        end
+      end
       texture = Screen('MakeTexture',win,cat(3,fixationimage(:,:,:,-fixationorder(1+frame0)),uint8(fixationorder(end)*fixationalpha)));
     end
   end
@@ -1109,7 +1256,14 @@ for frame=1:frameskip:size(frameorder,2)+1
     texture = {texture};
   end
   for p=1:length(texture)
-    Screen('DrawTexture',win,texture{p},[],fixationrect{p},0,0);
+    if isempty(stereocontrol)
+      Screen('DrawTexture',win,texture{p},[],fixationrect{p},0,0);
+    else
+      for sb=0:1
+        Screen('SelectStereoDrawBuffer', win, sb);
+        Screen('DrawTexture',win,texture{p},[],fixationrect{p},0,0);
+      end
+    end
     Screen('Close',texture{p});
   end
   
@@ -1128,7 +1282,18 @@ for frame=1:frameskip:size(frameorder,2)+1
       % then do the regular thing.
       if isempty(MI) || trialtask{6} > 0
         texture = Screen('MakeTexture',win,cat(3,trialimage,trialalpha));
-        Screen('DrawTexture',win,texture,[],trialrect,0,0);
+        if isempty(stereocontrol)
+          Screen('DrawTexture',win,texture,[],trialrect,0,0);
+        else
+          if ismember(stereocontrol(frame0),[1 3])
+            Screen('SelectStereoDrawBuffer', win, lenum);
+            Screen('DrawTexture',win,texture,[],trialrect,0,0);
+          end
+          if ismember(stereocontrol(frame0),[2 3])
+            Screen('SelectStereoDrawBuffer', win, renum);
+            Screen('DrawTexture',win,texture,[],trialrect,0,0);
+          end
+        end
 
       % this is the hard case.
       else
@@ -1148,13 +1313,32 @@ for frame=1:frameskip:size(frameorder,2)+1
         extractFA = uint8((double(extractMA)/255) .* double(extractTA));
           % proceed
         texture = Screen('MakeTexture',win,cat(3,extractTI,extractFA));
-        Screen('DrawTexture',win,texture,[],rect0,0,0);
+        if isempty(stereocontrol)
+          Screen('DrawTexture',win,texture,[],rect0,0,0);
+        else
+          if ismember(stereocontrol(frame0),[1 3])
+            Screen('SelectStereoDrawBuffer', win, lenum);
+            Screen('DrawTexture',win,texture,[],rect0,0,0);
+          end
+          if ismember(stereocontrol(frame0),[2 3])
+            Screen('SelectStereoDrawBuffer', win, renum);
+            Screen('DrawTexture',win,texture,[],rect0,0,0);
+          end
+        end
       end
       
       %%%% end voodoo
       
       Screen('Close',texture);
     end
+  end
+
+  % deal with blue lines
+  if ~isempty(stereocontrol)
+    Screen('SelectStereoDrawBuffer', win, 0);
+    leftbluefun1(); leftbluefun2();
+    Screen('SelectStereoDrawBuffer', win, 1);
+    rightbluefun1(); rightbluefun2();
   end
 
   % give hint to PT that we're done drawing
@@ -1197,12 +1381,25 @@ for frame=1:frameskip:size(frameorder,2)+1
       end
   
       % issue the flip command and record the empirical time
-      [VBLTimestamp,StimulusOnsetTime,FlipTimestamp,Missed,Beampos] = Screen('Flip',win,when);
+      [VBLTimestamp,StimulusOnsetTime,FlipTimestamp,Missed,Beampos] = Screen('Flip',win,  0);
 %      sound(sin(1:2000),100);
       timeframes(framecnt) = VBLTimestamp;
+      
+      % get matlab now for the very first stimulus frame
+      if framecnt==1
+        absnowtime = now;
+      end
+      
+      % report text to command window?
+      if ~isempty(reporttext)
+        fprintf(reporttext);
+      end
 
       % if we missed, report it
-      if Missed > 0 & when ~= 0
+% OLD WAY
+%      if Missed > 0 & when ~= 0
+% NEW WAY:
+      if when ~= 0 && (VBLTimestamp - whendesired) > (mfi * (1/2))
         glitchcnt = glitchcnt + 1;
         didglitch = 1;
       else
@@ -1252,24 +1449,40 @@ for frame=1:frameskip:size(frameorder,2)+1
   % update when
   if didglitch
     % if there were glitches, proceed from our earlier when time.
-    % set the when time to half a frame before the desired frame.
+    % set the when time to 9/10 a frame before the desired frame.
     % notice that the accuracy of the mfi is strongly assumed here.
-    when = (when + mfi / 2) + mfi * frameduration - mfi / 2;
+    whendesired = whendesired + mfi * frameduration;
+    when = whendesired - mfi * (9/10);
   else
     % if there were no glitches, just proceed from the last recorded time
-    % and set the when time to half a frame before the desired time.
+    % and set the when time to 9/10 a frame before the desired time.
     % notice that the accuracy of the mfi is only weakly assumed here,
     % since we keep resetting to the empirical VBLTimestamp.
-    when = VBLTimestamp + mfi * frameduration - mfi / 2;  % should we be less aggressive??
+    whendesired = VBLTimestamp + mfi * frameduration;
+    when = whendesired - mfi * (9/10);  % should we be less aggressive??
   end
   
 end
 
 % draw the background, overlay, and fixation
-Screen('FillRect',win,grayval,rect);
+if isempty(stereocontrol)
+  Screen('FillRect',win,grayval,rect);
+else
+  for sb=0:1
+    Screen('SelectStereoDrawBuffer', win, sb);
+    Screen('FillRect',win,grayval,rect);
+  end
+end
 if ~isempty(specialoverlay)
   texture = Screen('MakeTexture',win,specialoverlay);
-  Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+  if isempty(stereocontrol)
+    Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+  else
+    for sb=0:1
+      Screen('SelectStereoDrawBuffer', win, sb);
+      Screen('DrawTexture',win,texture,[],overlayrect,[],0);
+    end
+  end
   Screen('Close',texture);
 end
 if focase3
@@ -1290,11 +1503,26 @@ if ~iscell(texture)
   texture = {texture};
 end
 for p=1:length(texture)
-  Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+  if isempty(stereocontrol)
+    Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+  else
+    for sb=0:1
+      Screen('SelectStereoDrawBuffer', win, sb);
+      Screen('DrawTexture',win,texture{p},[],fixationrect{p},[],0);
+    end
+  end
   Screen('Close',texture{p});
 end
 if ~isempty(specialcon)
   Screen('LoadNormalizedGammaTable',win,specialcluts(:,:,allcons==100),1);  % use loadOnNextFlip!
+end
+
+% deal with blue lines and flip!
+if ~isempty(stereocontrol)
+  Screen('SelectStereoDrawBuffer', win, 0);
+  leftbluefun1(); leftbluefun2();
+  Screen('SelectStereoDrawBuffer', win, 1);
+  rightbluefun1(); rightbluefun2();
 end
 Screen('Flip',win);
 
@@ -1311,7 +1539,8 @@ timeframes = timeframes - starttime;
 if size(timekeys,1) > 0
   timekeys(:,1) = cellfun(@(x) x - starttime,timekeys(:,1),'UniformOutput',0);
 end
-timekeys = [{starttime 'absolutetimefor0'}; timekeys];
+  % OLD: we used to report starttime for 'absolutetimefor0'
+timekeys = [{absnowtime 'absolutetimefor0'}; timekeys];
 
 % report basic timing information to stdout
 fprintf('we had %d glitches!\n',glitchcnt);

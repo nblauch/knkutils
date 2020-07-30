@@ -10,6 +10,9 @@ in your MATLAB startup.m file.
 Below we document major code changes.  Minor code changes and tweaks that have no significant impact are not mentioned here (e.g. things like cosmetic adjustments, code speed-ups, making functions more general by adding optional input arguments, fixing bugs that would have result in code crashes, etc.).  Major changes include things that make the code backwards-incompatible and things that change actual analysis results.
 
 History of major code changes:
+2019/09/23 - major bug fix to matchfiles.m.  previously the order of cell vector elements was not respected.  now order is respected.
+2018/12/22 - matchfiles.m now RETURNS any duplicate filename matches. This changes past behavior.
+2018/12/22 - to resolve function naming conflicts, we have done the following: (1) completely removed the function called count.m, (2) completely removed the function called discretize.m, (3) renamed the function strsplit.m to strsplitalt.m
 2014/07/31 - in constructpolynomialmatrix.m, we now make the polynomials orthogonal and unit length. this changes previous behavior!
 2013/11/18 - use a smoother canonical HRF in getcanonicalhrf.m
 2013/09/07 - fix bug in fitnonlinearmodel (if polynomials or extra regressors were used in multiple runs, then they were not getting fit properly).
@@ -156,6 +159,7 @@ programming/
   promptforfile - get a .mat file name from the user
   repeatuntil - call a function until a condition is satisfied
   reportmemoryandtime - use a warning to report the current memory usage and the current time
+  rmdirquiet - remove a file or directory, suppressing warnings
   rowfun - apply a function to each row of a 2D matrix
   runmatlabinbg.pl - run MATLAB in the background for a single function/script call
   saveemptymat - save an empty .mat file
@@ -176,7 +180,7 @@ string/
   matchword - return the first word found in a string
   randomword - generate a random word consisting of capital letters
   sortnumerical - sort a cell vector of strings according to trailing integers
-  strsplit - split a string based on a pattern
+  strsplitalt - split a string based on a pattern
 
 io/
   absolutepath - return the absolute path to a given file
@@ -216,9 +220,8 @@ math/
   circulardiff - difference between two values defined in a circular domain
   circularshiftandsum - take a vector, circularly shift it multiple times, and sum
   clipoutliers - clip the outliers of a matrix
-  count - sum all elements of a matrix
+  constructpathonsphere - connect points on the unit sphere
   countinstances - count how many 1s, 2s, etc. are in a matrix
-  discretize - round elements of a matrix to one of two values
   divnorm - apply divisive normalization to a matrix
   matchgain - figure out scalar factor to match one set of data to another
   meanandse - calculate the mean and standard error
@@ -275,16 +278,19 @@ stats/
   evaldivnorm - evaluate divisive-normalization function at some values
   evalgaussian1d - evaluate 1D Gaussian function at some coordinates
   evalgaussian2d - evaluate 2D Gaussian function at some coordinates
+  evalgaussian2doriented - evaluate 2D Gaussian function (that can be rotated) at some coordinates
   evalgaussian3d - evaluate 3D Gaussian function at some coordinates
   evalgeneralizedgaussian - evaluate generalized Gaussian pdf
   filter2subsample - apply filter2 and then subsample the result
   findlocal - find points that are close to a given point
+  findtailthreshold - determine a threshold for a distribution of data using a GMM with 2 Gaussians
   fit2dpolynomialmodel - use polynomial basis functions to fit a surface defined in 2D, allowing scale factor for different cases
   fit3dpolynomialmodel - use polynomial basis functions to fit a surface defined in 3D, allowing scale factor for different cases
   fit3dpolynomialmodel2 - use polynomial basis functions to fit a surface defined in 3D, allowing DC offset for different cases
   fitdivnorm - fit divisive-normalization function
   fitgaussian1d - fit 1D Gaussian function
   fitgaussian2d - fit 2D Gaussian function
+  fitgaussian2doriented - fit 2D Gaussian function that can be rotated
   fitgaussian3d - fit 3D Gaussian function
   fitl1line - perform linear regression but use an L1-error metric 
   fitline2derror - fit a line to a set of 2D points using an error metric that is sensitive to both x and y
@@ -374,9 +380,13 @@ imageprocessing/
   imagefilter - filter images with a Fourier-defined magnitude-based filter
   imagefilter3D - filter volumes with a Fourier-defined magnitude-based filter
   imagesearch - search through image space to minimize some cost function
+  imagesequenceconcatenate - concatenate multiple image files together
   imagesequencetomovie - make a QT movie from images
+  imaveragefiles - average multiple image files together
   imcropfiles - manually define a crop region and then apply to one or more image files
   imreadmulti - load in multiple images
+  imrectsquare - enforce square and integer crop to an imrect
+  imrectimagecrop - return a valid image crop from imrect
   imresizedifferentfov - resize an image but use a different field-of-view
   imresizememory - call imresize on a bunch of images, minimizing memory usage
   imwritemulti - write multiple images to multiple files
@@ -480,10 +490,14 @@ graphic/
   xyzscale - construct a scaling transformation matrix
   xyztranslate - construct a translating transformation matrix
   xyzrotate_* - construct a rotation transformation matrix
+  xyzrotatetoz - return rotation transformation matrix to align a vector with positive z-axis
 
 mri/
   calchrfpeak - estimate the peak (positive or negative) value of an HRF
+  changevolumeres - change the resolution of a volume while preserving field-of-view
+  computebrickandindices - determine a brick into a 3D binary volume
   computetemporalsnr - compute the stability of a series of 3D volumes over time
+  condition_split - perform condition-splitting on a set of design matrices
   constructhrfmodeldct - return a matrix of DCT-II basis functions for modeling HRFs
   constructhrfmodeldelta - return a matrix of delta basis functions for modeling HRFs
   constructhrfmodelspline - return an spline-based HRF model
@@ -494,14 +508,19 @@ mri/
   dicomloaddir - load volumes and voxel-size information from a DICOM directory
   evaldoublegamma - evaluate double-gamma function at some x-values
   expdesignefficiency - calculate efficiency of an experimental design
+  fithrfgammadouble.m - fit a double-gamma function
   fmriquality - write figures to inspect the spatial quality of fMRI volumes
   fstoint - go from FreeSurfer space to our internal space
   getcanonicalhrf - return a canonical HRF (based on empirical data) for arbitrary duration and TR
+  getcanonicalhrf2 - return canonical Early and Late HRFs (based on empirical data) for arbitrary duration and TR
+  getcanonicalhrflibrary - return a set of canonical HRFs (based on empirical data) for arbitrary duration and TR
   getsamplehrf - return some sample HRFs estimated from actual fMRI data
   homogenizevolumes - homogenize a set of 3D volumes by dividing by fitted 3D polynomials
+  hrfgammadouble.m - evaluate a double-gamma function
   inttofs - go from our internal space to FreeSurfer space
   motioncorrectvolumes - perform motion correction for some volumes
   preconditionvolume - precondition a 3D volume by clipping outliers and removing low-frequency signal variations
+  quantifymotionparameters - compute an intuitive summary metric of rigid-body motion during a run
   settr_nii - set the TR in the header information of an NII structure
   surfaceslice2 - figure out information relating voxels to vertices
   undistortvolumes - resample volumes in order to correct for motion and distortion
@@ -509,7 +528,10 @@ mri/
   writespmfiles - write a series of volumes to individual SPM/ANALYZE files
 
 pt/
+  calcfixationdotchangeperformance - perform analysis of behavioral data for experiments involving dot change detection
   preparedigits - generate some digits and letters as uint8 images
+  pteyelinkoff - some eye-tracking related setup
+  pteyelinkon - some eye-tracking related setup
   pton - initialize PsychToolbox stuff
   ptoff - uninitialize PsychToolbox stuff
   ptviewimage - show one or more images and allow user to position the images
@@ -517,6 +539,9 @@ pt/
   ptviewmoviecheck - check the results of ptviewmovie.m
   runretinotopy - script for retinotopy experiment
   showmulticlass - helper function for various experiments
+
+external/   [code obtained from elsewhere]
+  hist2d.m - count histogram frequencies in two dimensions
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% COPYRIGHT
 
